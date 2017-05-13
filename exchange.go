@@ -69,8 +69,8 @@ func NewExchange() *Exchange {
 }
 
 func (e *Exchange) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	route := extractRouteFromURL(r)
-	op := extractOperationFromURL(r)
+
+	route, op := extractRouteAndOperationFromURL(r)
 
 	switch op {
 	case opWebSocket:
@@ -86,24 +86,38 @@ func (e *Exchange) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func extractRouteFromURL(r *http.Request) string {
-	lastSlash := strings.LastIndex(r.URL.Path, "/")
-	return r.URL.Path[:lastSlash]
-}
+func extractRouteAndOperationFromURL(r *http.Request) (string, string) {
 
-func extractOperationFromURL(r *http.Request) string {
-	lastSlash := strings.LastIndex(r.URL.Path, "/")
-	return r.URL.Path[lastSlash+1:]
+	reqpath := strings.TrimRight(r.URL.Path, "/")
+
+	lastSlash := strings.LastIndex(reqpath, "/")
+
+	if lastSlash == 0 {
+		return reqpath, ""
+	} else {
+		return reqpath[:lastSlash], reqpath[lastSlash+1:]
+	}
 }
 
 func (e *Exchange) upgradeWebSocket(w http.ResponseWriter, r *http.Request) {
+
 	ws, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		return
 	}
-	c := &connection{e: e, out: make(chan []byte, 256), ws: ws, c: e.transports["websocket"].(*webSocketTransport), id: r.URL.Query()["connectionId"][0]}
+
+	c := &connection{
+		e:   e,
+		out: make(chan []byte, 256),
+		ws:  ws,
+		c:   e.transports["websocket"].(*webSocketTransport),
+		id:  r.URL.Query()["connectionId"][0],
+	}
+
 	c.c.connected <- c
+
 	defer func() { c.c.disconnected <- c }()
+
 	go c.write()
 	c.read()
 }
